@@ -1,87 +1,111 @@
 import json
+import gzip
 import csv
+import requests
 import os
 from collections import defaultdict
 
-# Base folder where your datasets are
-BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-OUTPUT_FILE = os.path.join(BASE_DIR, "master_dataset.jsonl")
+# === URLs ===
+NVD_URL = "https://nvd.nist.gov/feeds/json/cve/1.1/nvdcve-1.1-2024.json.gz"
+CISA_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+EXPLOITDB_CSV_URL = "https://raw.githubusercontent.com/offensive-security/exploitdb/main/files_exploits.csv"
 
-# Helper functions
-def load_json(path):
-    with open(path, "r", encoding="utf-8") as f:
+# === Output Path ===
+OUTPUT_PATH = "data/merged_vulnerabilities.json"
+os.makedirs("data", exist_ok=True)
+
+# === Merged data structure ===
+merged_data = defaultdict(dict)
+
+# --- Fetchers ---
+
+def fetch_nvd_data(url):
+    print("🔄 Downloading NVD data...")
+    response = requests.get(url)
+    gz_path = "data/nvd_2024.json.gz"
+    with open(gz_path, "wb") as f:
+        f.write(response.content)
+    with gzip.open(gz_path, 'rt', encoding='utf-8') as f:
         return json.load(f)
 
-def load_csv(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return list(csv.DictReader(f))
+def fetch_cisa_data(url):
+    print("🔄 Downloading CISA KEV data...")
+    return requests.get(url).json().get("vulnerabilities", [])
 
-# Dictionary to accumulate data by CVE ID
-combined = defaultdict(lambda: {"sources": []})
+def fetch_exploitdb_data(url):
+    print("🔄 Downloading Exploit-DB CSV...")
+    response = requests.get(url)
+    lines = response.content.decode("utf-8").splitlines()
+    return list(csv.DictReader(lines))
 
-# Load merged enriched JSON (core base)
-try:
-    enriched = load_json(os.path.join(BASE_DIR, "merged_vulnerabilities_enriched.json"))
-    if isinstance(enriched, dict):
-        for cve, entry in enriched.items():
-            cve_id = entry.get("cve_id") or entry.get("id") or cve
-            if cve_id:
-                combined[cve_id].update(entry)
-                combined[cve_id]["sources"].append("enriched")
-    else:
-        print("⚠️ merged_vulnerabilities_enriched.json is not a dictionary.")
-except FileNotFoundError:
-    print("⚠️ merged_vulnerabilities_enriched.json not found.")
+# --- Parsers ---
 
-# Load PacketStorm exploits
-try:
-    packetstorm = load_json(os.path.join(BASE_DIR, "packetstorm_exploits.json"))
-    for entry in packetstorm:
-        cve = entry.get("cve") or entry.get("cve_id")
-        if cve and cve in combined:
-            combined[cve]["packetstorm_exploit"] = entry
-            combined[cve]["sources"].append("packetstorm")
-except FileNotFoundError:
-    print("⚠️ packetstorm_exploits.json not found.")
+def parse_nvd(data):
+    print("🔍 Parsing NVD...")
+    for item in data.get("CVE_Items", []):
+        cve_id = item["cve"]["CVE_data_meta"]["ID"]
+        entry = merged_data[cve_id]
+        entry["cve_id"] = cve_id
+        entry["description"] = item["cve"]["description"]["description_data"][0]["value"]
+        cvss = item.get("impact", {}).get("baseMetricV3", {}).get("cvssV3", {})
+        entry["severity"] = cvss.get("baseSeverity")
+        entry["attack_vector"] = cvss.get("attackVector")
+        entry["impact"] = cvss.get("impactScore")
+        entry["affected_products"] = list({
+            cpe["cpe23Uri"]
+            for node in item.get("configurations", {}).get("nodes", [])
+            for cpe in node.get("cpe_match", [])
+            if "cpe23Uri" in cpe
+        })
+        refs = item["cve"]["references"]["reference_data"]
+        entry["patch_available"] = any(
+            "patch" in ref.get("tags", []) or
+            "patch" in ref.get("description", "").lower()
+            for ref in refs
+        )
 
-# Load high_unpatched.csv
-try:
-    high = load_csv(os.path.join(BASE_DIR, "high_unpatched.csv"))
-    for row in high:
-        cve = row.get("CVE ID") or row.get("cve_id")
-        if cve and cve in combined:
-            combined[cve]["high_unpatched"] = True
-            combined[cve]["sources"].append("high_unpatched_csv")
-except FileNotFoundError:
-    print("⚠️ high_unpatched.csv not found.")
+def parse_cisa(cisa_data):
+    print("🔍 Parsing CISA KEV...")
+    for vuln in cisa_data:
+        cve_id = vuln.get("cveID")
+        if cve_id:
+            entry = merged_data[cve_id]
+            entry["exploited"] = True
+            entry["cisa_kev"] = {
+                "dateAdded": vuln.get("dateAdded"),
+                "notes": vuln.get("notes"),
+                "mitigations": vuln.get("requiredAction"),
+                "vendorProject": vuln.get("vendorProject"),
+                "product": vuln.get("product")
+            }
 
-# Load GitHub PoC summary
-try:
-    summary = load_csv(os.path.join(BASE_DIR, "summary_with_github_pocs.csv"))
-    for row in summary:
-        cve = row.get("CVE ID") or row.get("cve_id")
-        if cve and cve in combined:
-            combined[cve]["github_poc_summary"] = row
-            combined[cve]["sources"].append("github_poc_summary_csv")
-except FileNotFoundError:
-    print("⚠️ summary_with_github_pocs.csv not found.")
+def parse_exploitdb(exploitdb_data):
+    print("🔍 Parsing Exploit-DB...")
+    for row in exploitdb_data:
+        cve_id = row.get("cve")
+        if cve_id:
+            entry = merged_data[cve_id]
+            entry.setdefault("exploitdb_exploits", []).append({
+                "exploit_id": row.get("id"),
+                "title": row.get("description"),
+                "url": f"https://www.exploit-db.com/exploits/{row.get('id')}",
+                "platform": row.get("platform"),
+                "type": row.get("type"),
+                "date": row.get("date")
+            })
 
-# Load critical_with_poc.csv
-try:
-    critical = load_csv(os.path.join(BASE_DIR, "critical_with_poc.csv"))
-    for row in critical:
-        cve = row.get("CVE ID") or row.get("cve_id")
-        if cve and cve in combined:
-            combined[cve]["critical_with_poc"] = True
-            combined[cve]["sources"].append("critical_with_poc_csv")
-except FileNotFoundError:
-    print("⚠️ critical_with_poc.csv not found.")
+# --- Run Pipeline ---
 
-# Write to master_dataset.jsonl
-with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
-    for cve_id, data in combined.items():
-        data["cve_id"] = cve_id
-        json.dump(data, out)
-        out.write("\n")
+nvd = fetch_nvd_data(NVD_URL)
+cisa = fetch_cisa_data(CISA_URL)
+exploitdb = fetch_exploitdb_data(EXPLOITDB_CSV_URL)
 
-print(f"✅ Done. {len(combined)} CVEs written to {OUTPUT_FILE}")
+parse_nvd(nvd)
+parse_cisa(cisa)
+parse_exploitdb(exploitdb)
+
+# Export merged JSON
+with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+    json.dump(merged_data, f, indent=2)
+
+print(f"✅ Done. Merged vulnerability data written to {OUTPUT_PATH} ({len(merged_data)} CVEs)")
