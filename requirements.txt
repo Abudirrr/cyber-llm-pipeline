@@ -1,0 +1,6 @@
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+pandas>=2.2.1
+lxml>=5.1.0
+tqdm>=4.66.2
+sqlite-utils>=3.35  # Optional, helps with managing SQLite programmatically
