@@ -2,54 +2,57 @@ name: Run Vulnerability Data Pipeline
 
 on:
   schedule:
-    - cron: '0 3 * * *'
-  workflow_dispatch:
+    - cron: '0 3 * * *'  # Every day at 03:00 UTC
+  workflow_dispatch:     # Allow manual trigger
 
 permissions:
-  contents: write
+  contents: write        # Needed to commit changes
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: 🧾 Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: |
-          pip install requests pandas beautifulsoup4
+          pip install -r requirements.txt || pip install requests pandas beautifulsoup4
 
-      - name: Run data fetching
+      - name: 📥 Run NVD Data Fetcher
         run: python scripts/fetch_nvd_data.py
 
-      - name: Merge vulnerabilities
+      - name: 🧬 Merge Vulnerabilities
         run: python scripts/merge_vulnerabilities.py
 
-      - name: Enrich with GitHub PoCs
+      - name: 💡 Enrich with GitHub PoCs
         run: python scripts/enrich_with_github_pocs.py
 
-      - name: Scrape GitHub PoCs
+      - name: 🕵️ Scrape GitHub PoCs
         run: python scripts/github_poc_integrator.py
 
-      - name: Scrape VulnHub
+      - name: 🧠 Scrape VulnHub
         run: python scripts/scrape_vulnhub.py
 
-      - name: Scrape PacketStorm
+      - name: 📂 Scrape PacketStorm
         run: python scripts/scrape_packetstorm.py
 
-      - name: Export to SQLite
+      - name: 🗃️ Export to SQLite
         run: python scripts/json_to_sqlite.py
 
-      - name: Commit updated data
+      - name: 🧾 Generate Master Dataset
+        run: python scripts/generate_master_dataset.py
+
+      - name: 🚀 Commit & Push Updated Data
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
-          git add data/*.json data/*.csv data/*.db || true
-          git commit -m "Update vulnerability database and enrichments" || echo "No changes to commit"
+          git add data/*.json data/*.csv data/*.db data/*.jsonl || true
+          git commit -m "📅 Auto-update vulnerability dataset" || echo "No changes to commit"
           git push
