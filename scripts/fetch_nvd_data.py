@@ -10,12 +10,12 @@ CISA_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulne
 
 # Primary and fallback Exploit-DB sources
 EXPLOIT_DB_URLS = [
-    "https://raw.githubusercontent.com/offensive-security/exploitdb/master/files_exploits.csv",  # Often breaks
-    "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv",  # More stable
+    "https://raw.githubusercontent.com/offensive-security/exploitdb/master/files_exploits.csv",  # Often broken
+    "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv",               # ✅ Stable
 ]
 
 def download_file(url, dest):
-    """Downloads a file and saves it to the destination path."""
+    """Downloads a file from the specified URL to the destination path."""
     print(f"🔽 Downloading: {url}")
     try:
         response = requests.get(url, timeout=30)
@@ -37,13 +37,13 @@ def download_file(url, dest):
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    # Download NVD
+    # Download NVD CVE data
     download_file(NVD_URL, os.path.join(DATA_DIR, "nvd_modified.json.gz"))
 
-    # Download CISA
+    # Download CISA KEV catalog
     download_file(CISA_URL, os.path.join(DATA_DIR, "cisa_kev.json"))
 
-    # Try all Exploit-DB URLs until one succeeds
+    # Try all known Exploit-DB sources until one succeeds
     for url in EXPLOIT_DB_URLS:
         if download_file(url, os.path.join(DATA_DIR, "exploitdb.csv")):
             break
