@@ -4,15 +4,15 @@ import requests
 # Directory to save downloaded files
 DATA_DIR = "data"
 
-# Official source URLs
+# Official vulnerability feed URLs
 NVD_URL = "https://nvd.nist.gov/feeds/json/cve/1.1/nvdcve-1.1-modified.json.gz"
 CISA_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 
-# Exploit-DB mirror via GitLab (more reliable than GitHub raw)
+# ✅ Working Exploit-DB CSV mirror (GitLab)
 EXPLOIT_DB_URL = "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv"
 
 def download_file(url, dest):
-    """Downloads a file from URL and saves it to the destination path."""
+    """Download a file from a URL and save to destination."""
     print(f"🔽 Downloading: {url}")
     try:
         response = requests.get(url, timeout=30)
@@ -30,7 +30,7 @@ def download_file(url, dest):
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    # Download files from all sources
+    # Download each feed
     download_file(NVD_URL, os.path.join(DATA_DIR, "nvd_modified.json.gz"))
     download_file(CISA_URL, os.path.join(DATA_DIR, "cisa_kev.json"))
     download_file(EXPLOIT_DB_URL, os.path.join(DATA_DIR, "exploitdb.csv"))
