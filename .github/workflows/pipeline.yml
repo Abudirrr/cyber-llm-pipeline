@@ -6,7 +6,7 @@ on:
   workflow_dispatch:     # Allow manual trigger
 
 permissions:
-  contents: write        # Needed to commit changes
+  contents: write  # Needed to commit changes
 
 jobs:
   run-pipeline:
@@ -29,7 +29,7 @@ jobs:
         run: python scripts/run_all.py
 
       - name: 🗂️ Upload datasets as artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3.1.3
         with:
           name: vulnerability-dataset
           path: |
