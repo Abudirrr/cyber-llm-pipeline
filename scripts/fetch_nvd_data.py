@@ -1,13 +1,11 @@
 import os
 import requests
 
-# Directory to store downloaded files
 DATA_DIR = "data"
 
-# Official data sources
 NVD_URL = "https://nvd.nist.gov/feeds/json/cve/1.1/nvdcve-1.1-modified.json.gz"
 CISA_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-EXPLOIT_DB_URL = "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv"  # ✅ WORKING
+EXPLOIT_DB_URL = "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv"
 
 def download_file(url, dest):
     print(f"🔽 Downloading: {url}")
@@ -17,12 +15,10 @@ def download_file(url, dest):
         with open(dest, 'wb') as f:
             f.write(response.content)
         print(f"✅ Saved to: {dest}")
-        return True
     except requests.exceptions.HTTPError as http_err:
         print(f"❌ HTTP error: {http_err}")
     except Exception as err:
         print(f"❌ Error: {err}")
-    return False
 
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
